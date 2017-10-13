@@ -23,6 +23,7 @@ import com.atomikos.icatch.RecoveryService;
 import com.atomikos.icatch.SysException;
 import com.atomikos.logging.Logger;
 import com.atomikos.logging.LoggerFactory;
+import com.atomikos.recovery.LogException;
 import com.atomikos.recovery.xa.XaResourceRecoveryManager;
 
 
@@ -445,12 +446,19 @@ public abstract class XATransactionalResource implements TransactionalResource
 
     @Override
     public void recover() {
-    	XaResourceRecoveryManager xaResourceRecoveryManager = XaResourceRecoveryManager.getInstance();
-    	if (xaResourceRecoveryManager != null) { //null for LogCloud recovery
-    		if(getXAResource() != null) { //null if backend down
-    			xaResourceRecoveryManager.recover(getXAResource());	
-    		}
-    		
-    	}
+        XaResourceRecoveryManager xaResourceRecoveryManager = XaResourceRecoveryManager.getInstance();
+        if (xaResourceRecoveryManager != null) { //null for LogCloud recovery
+            if (getXAResource() != null) { //null if backend down
+                try {
+                    xaResourceRecoveryManager.recover(getXAResource());
+                } catch (XAException e) {
+                    //need to refresh
+                    getXAResource();
+                } catch (LogException e) {
+                    LOGGER.logWarning("Error while retrieving xids from resource - will retry later...", e);
+                }
+            }
+
+        }
     }
 }
