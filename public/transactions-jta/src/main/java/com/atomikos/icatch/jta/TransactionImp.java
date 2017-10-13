@@ -242,72 +242,80 @@ class TransactionImp implements Transaction {
 
 		XAResourceTransaction suspendedXAResourceTransaction = findXAResourceTransaction(xares);
 
-		if (suspendedXAResourceTransaction != null) {
+        if (suspendedXAResourceTransaction != null) {
 
-			if (!suspendedXAResourceTransaction.isXaSuspended()) {
-				String msg = "The given XAResource instance is being enlisted a second time without delist in between?";
-				LOGGER.logWarning(msg);
-				throw new IllegalStateException(msg);
-			}
+            if (!suspendedXAResourceTransaction.isXaSuspended()) {
 
-			// note: for suspended XAResources, the lookup MUST SUCCEED
-			// since the TMRESUME must be called on the SAME XAResource
-			// INSTANCE, and lookup also works on the instance level
-			try {
-				suspendedXAResourceTransaction.setXAResource(xares);
-				suspendedXAResourceTransaction.xaResume();
-			} catch (XAException xaerr) {
-				if (XAException.XA_RBBASE <= xaerr.errorCode
-						&& xaerr.errorCode <= XAException.XA_RBEND)
-					rethrowAsJtaRollbackException(
-							"Transaction was already rolled back inside the back-end resource. Further enlists are useless.",
-							xaerr);
-				throw new ExtendedSystemException(
-						"Unexpected error during enlist", xaerr);
-			}
+                String msg = "The given XAResource instance is being enlisted a second time without delist in between? trying to delist...";
+                LOGGER.logWarning(msg);
+                if (!delistResource(xares, XAResource.TMNOFLAGS)) {
+                    throw new IllegalStateException(msg);
+                }
+                enlistNew(xares);
+            } else {
+                // note: for suspended XAResources, the lookup MUST SUCCEED
+                // since the TMRESUME must be called on the SAME XAResource
+                // INSTANCE, and lookup also works on the instance level
+                try {
+                    suspendedXAResourceTransaction.setXAResource(xares);
+                    suspendedXAResourceTransaction.xaResume();
+                } catch (XAException xaerr) {
+                    if (XAException.XA_RBBASE <= xaerr.errorCode
+                            && xaerr.errorCode <= XAException.XA_RBEND)
+                        rethrowAsJtaRollbackException(
+                                "Transaction was already rolled back inside the back-end resource. Further enlists are useless.",
+                                xaerr);
+                    throw new ExtendedSystemException(
+                            "Unexpected error during enlist", xaerr);
+                }
+            }
 
-		} else {
+        } else {
+            enlistNew(xares);
+        }
+        return true;
+    }
 
-			res = findRecoverableResourceForXaResource(xares);
+    private void enlistNew(XAResource xares) throws SystemException {
+        TransactionalResource res;
+        XAResourceTransaction restx;
+        res = findRecoverableResourceForXaResource(xares);
 
-			if (LOGGER.isDebugEnabled()) {
-				LOGGER.logDebug("enlistResource ( " + xares
-						+ " ) with transaction " + toString());
-			}
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.logDebug("enlistResource ( " + xares
+                    + " ) with transaction " + toString());
+        }
 
-			if (res == null) {
-				String msg = "There is no registered resource that can recover the given XAResource instance. "
-						+ "\n"
-						+ "Either enable automatic resource registration, or register a corresponding resource.";
-				LOGGER.logWarning(msg);
-				throw new javax.transaction.SystemException(msg);
-			}
+        if (res == null) {
+            String msg = "There is no registered resource that can recover the given XAResource instance. "
+                    + "\n"
+                    + "Either enable automatic resource registration, or register a corresponding resource.";
+            LOGGER.logWarning(msg);
+            throw new SystemException(msg);
+        }
 
-			try {
-				restx = (XAResourceTransaction) res
-						.getResourceTransaction(this.compositeTransaction);
+        try {
+            restx = (XAResourceTransaction) res
+                    .getResourceTransaction(this.compositeTransaction);
 
-				// next, we MUST set the xa resource again,
-				// because ONLY the instance we got as argument
-				// is available for use now !
-				// older instances (set in restx from previous sibling)
-				// have connections that may be in reuse already
-				// ->old xares not valid except for 2pc operations
+            // next, we MUST set the xa resource again,
+            // because ONLY the instance we got as argument
+            // is available for use now !
+            // older instances (set in restx from previous sibling)
+            // have connections that may be in reuse already
+            // ->old xares not valid except for 2pc operations
 
-				restx.setXAResource(xares);
-				restx.resume();
-			} catch (ResourceException re) {
-				throw new ExtendedSystemException(
-						"Unexpected error during enlist", re);
-			} catch (RuntimeException e) {
-				throw e;
-			}
+            restx.setXAResource(xares);
+            restx.resume();
+        } catch (ResourceException re) {
+            throw new ExtendedSystemException(
+                    "Unexpected error during enlist", re);
+        } catch (RuntimeException e) {
+            throw e;
+        }
 
-			addXAResourceTransaction(restx, xares);
-		}
-
-		return true;
-	}
+        addXAResourceTransaction(restx, xares);
+    }
 
 	private TransactionalResource findRecoverableResourceForXaResource(
 			XAResource xares) {
@@ -394,7 +402,17 @@ class TransactionImp implements Transaction {
 						"Error in delisting the given XAResource", xaerr);
 			}
 
-		} else {
+		} else if (flag == XAResource.TMNOFLAGS) {
+
+            try {
+                active.suspend();
+            } catch (ResourceException re) {
+                throw new ExtendedSystemException(
+                        "Error in delisting the given XAResource", re);
+            }
+            removeXAResourceTransaction(xares);
+
+        } else {
 			String msg = "Unknown delist flag: " + flag;
 			LOGGER.logWarning(msg);
 			throw new javax.transaction.SystemException(msg);
