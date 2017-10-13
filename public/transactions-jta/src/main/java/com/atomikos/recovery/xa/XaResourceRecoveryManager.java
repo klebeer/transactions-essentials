@@ -63,10 +63,10 @@ public class XaResourceRecoveryManager {
 	
 	
 
-	public void recover(XAResource xaResource) {
+	public void recover(XAResource xaResource) throws LogException, XAException {
 		List<XID> xidsToRecover = retrievePreparedXidsFromXaResource(xaResource);
 		Collection<XID> xidsToCommit;
-		try {
+
 			xidsToCommit = retrieveExpiredCommittingXidsFromLog();
 			for (XID xid : xidsToRecover) {
 				if (xidsToCommit.contains(xid)) {
@@ -75,9 +75,7 @@ public class XaResourceRecoveryManager {
 					attemptPresumedAbort(xid, xaResource);
 				}
 			}
-		} catch (LogException couldNotRetrieveCommittingXids) {
-			LOGGER.logWarning("Transient error while recovering - will retry later...", couldNotRetrieveCommittingXids);
-		}
+
 	}
 
 	private void replayCommit(XID xid, XAResource xaResource) {
@@ -152,14 +150,9 @@ public class XaResourceRecoveryManager {
 		return log.getExpiredCommittingXids();
 	}
 
-	private List<XID> retrievePreparedXidsFromXaResource(XAResource xaResource) {
+	private List<XID> retrievePreparedXidsFromXaResource(XAResource xaResource) throws XAException {
 		List<XID> ret = new ArrayList<XID>();
-		try {
-			ret = RecoveryScan.recoverXids(xaResource, xidSelector);
-		} catch (XAException e) {
-			LOGGER.logWarning("Error while retrieving xids from resource - will retry later...", e);
-		}
-		return ret;
+        return RecoveryScan.recoverXids(xaResource, xidSelector);
 	}
 
 	private void attemptPresumedAbort(XID xid, XAResource xaResource) {

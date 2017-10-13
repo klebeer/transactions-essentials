@@ -296,7 +296,13 @@ public class XaResourceRecoveryManagerTestJUnit {
 	}
 
 	private void whenRecovered() {
-		xaResourceRecoveryManager.recover(xaResource);
+		try {
+			xaResourceRecoveryManager.recover(xaResource);
+		} catch (LogException e) {
+			e.printStackTrace();
+		} catch (XAException e) {
+			e.printStackTrace();
+		}
 	}
 
 	private void givenXaResourceWithPreparedXid(Xid xid) throws XAException {
