@@ -7,3 +7,6 @@ target/
 .hgignore
 .hgtags
 .project
+.DS_Store
+*.iml
+.idea
